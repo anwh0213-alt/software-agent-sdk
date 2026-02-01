@@ -7,9 +7,10 @@ from openhands.tools.terminal import TerminalTool
 
 
 llm = LLM(
-    model=os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929"),
-    api_key=os.getenv("LLM_API_KEY"),
-    base_url=os.getenv("LLM_BASE_URL", None),
+    # model=os.getenv("LLM_MODEL", "openhands/claude-sonnet-4-5-20250929"),
+    model=os.getenv("LLM_MODEL", "litellm_proxy/deepseek-chat"),
+    api_key=os.getenv("LLM_API_KEY", "abc"),
+    base_url=os.getenv("LLM_BASE_URL", "http://127.0.0.1:4000"),
 )
 
 agent = Agent(
