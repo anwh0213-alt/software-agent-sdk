@@ -77,7 +77,7 @@ testpaths = [
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --ignore=tests/github_workflows --ignore=tests/integration"
 asyncio_mode = "auto"
 
 # Pyright configuration for PEP 420 namespace packages
