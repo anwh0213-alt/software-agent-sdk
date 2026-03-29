@@ -26,9 +26,11 @@ from openhands.tools.preset.default import (
     register_builtins_agents,
     register_default_tools,
 )
+from openhands.tools.search_academic import SearchAcademicTool
 from openhands.tools.task import TaskToolSet
 from openhands.tools.task_tracker import TaskTrackerTool
 from openhands.tools.terminal import TerminalTool
+from openhands.tools.web_browser_academic import WebBrowserAcademicTool
 
 
 try:
@@ -41,9 +43,11 @@ __all__ = [
     "__version__",
     "DelegationVisualizer",
     "FileEditorTool",
+    "SearchAcademicTool",
     "TaskToolSet",
     "TaskTrackerTool",
     "TerminalTool",
+    "WebBrowserAcademicTool",
     "get_default_agent",
     "get_default_tools",
     "register_default_tools",
