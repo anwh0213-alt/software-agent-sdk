@@ -2,7 +2,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from datetime import date
 from typing import Any, Optional
+from xml.etree import ElementTree
 
 import httpx
 
@@ -80,9 +82,47 @@ class BaseSearchEngine(ABC):
         for attempt in range(max_retries):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.get(url, headers=headers, params=params)
+                    response = await client.get(
+                        url,
+                        headers=headers,
+                        params=params,
+                        follow_redirects=True,
+                    )
                     response.raise_for_status()
                     return response.json()  # type: ignore
+
+            except Exception as e:
+                last_exception = e
+                logger.warning(
+                    f"Fetch attempt {attempt + 1} failed: {e}. "
+                    f"Retrying..." if attempt < max_retries - 1 else "Giving up."
+                )
+
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Failed to fetch data after retries")
+
+    async def _fetch_text_with_retry(
+        self,
+        url: str,
+        headers: Optional[dict[str, str]] = None,
+        params: Optional[dict[str, Any]] = None,
+        max_retries: int = 3,
+    ) -> str:
+        """Fetch text content from URL with retry logic."""
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(
+                        url,
+                        headers=headers,
+                        params=params,
+                        follow_redirects=True,
+                    )
+                    response.raise_for_status()
+                    return response.text
 
             except Exception as e:
                 last_exception = e
@@ -274,7 +314,7 @@ class ArxivSearchEngine(BaseSearchEngine):
         """Initialize arXiv search engine."""
         super().__init__(api_key=None, timeout=timeout)
         self.engine_name = "arxiv"
-        self.api_endpoint = "http://export.arxiv.org/api/query"
+        self.api_endpoint = "https://export.arxiv.org/api/query"
 
     async def search(self, query: str, max_results: int = 10) -> SearchResponse:
         """Search using arXiv API.
@@ -294,7 +334,7 @@ class ArxivSearchEngine(BaseSearchEngine):
                 "sortBy": "relevance",
             }
 
-            response_data: dict[str, Any] = await self._fetch_with_retry(
+            response_data = await self._fetch_text_with_retry(
                 self.api_endpoint,
                 params=params,
             )
@@ -319,15 +359,54 @@ class ArxivSearchEngine(BaseSearchEngine):
             )
 
     @staticmethod
-    def parse_results(raw_response: dict[str, Any]) -> list[SearchResult]:
+    def parse_results(raw_response: str) -> list[SearchResult]:
         """Parse arXiv API response.
 
         Args:
-            raw_response: Raw response from arXiv API (XML parsed as dict)
+            raw_response: Raw response from arXiv API (Atom XML)
 
         Returns:
             List of SearchResult objects
         """
-        # Note: arXiv returns XML, but for simplification we'll handle it later
-        # For now, return empty results
-        return []
+        namespace = {"atom": "http://www.w3.org/2005/Atom"}
+        root = ElementTree.fromstring(raw_response)
+        results = []
+
+        for entry in root.findall("atom:entry", namespace):
+            title = (entry.findtext("atom:title", default="", namespaces=namespace) or "").strip()
+            summary = (
+                entry.findtext("atom:summary", default="", namespaces=namespace) or ""
+            ).strip()
+            url = ""
+            for link in entry.findall("atom:link", namespace):
+                if link.attrib.get("rel") == "alternate":
+                    url = link.attrib.get("href", "")
+                    break
+
+            authors = [
+                (author.findtext("atom:name", default="", namespaces=namespace) or "").strip()
+                for author in entry.findall("atom:author", namespace)
+            ]
+            published_text = (
+                entry.findtext("atom:published", default="", namespaces=namespace) or ""
+            ).strip()
+            published_date = None
+            if published_text:
+                try:
+                    published_date = date.fromisoformat(published_text[:10])
+                except ValueError:
+                    published_date = None
+
+            results.append(
+                SearchResult(
+                    title=title,
+                    url=url,
+                    source="arxiv",
+                    snippet=summary,
+                    authors=authors,
+                    published_date=published_date,
+                    relevance_score=0.8,
+                )
+            )
+
+        return results
