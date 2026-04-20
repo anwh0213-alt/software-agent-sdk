@@ -203,6 +203,7 @@ cache
 /workspace/
 openapi.json
 .client/
+.codex
 
 # Local workspace files
 .beads/*.db
