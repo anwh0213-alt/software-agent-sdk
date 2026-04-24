@@ -106,7 +106,7 @@ class SerperSearchEngine(BaseSearchEngine):
     ) -> None:
         """Initialize Serper search engine.
 
-        Note: API key should be set via SEARCH_ACADEMIC_SERPER_API_KEY environment variable
+        Note: API key should be set via SERPER_API_KEY environment variable
         """
         super().__init__(api_key=api_key, timeout=timeout)
         self.engine_name = "serper"
@@ -125,7 +125,7 @@ class SerperSearchEngine(BaseSearchEngine):
         if not self.api_key:
             logger.warning(
                 f"{self.engine_name} API key not configured. "
-                "Set SEARCH_ACADEMIC_SERPER_API_KEY environment variable."
+                "Set SERPER_API_KEY environment variable."
             )
             return SearchResponse(
                 query=query,
@@ -188,14 +188,20 @@ class SerperSearchEngine(BaseSearchEngine):
 
 
 class ScholarSearchEngine(BaseSearchEngine):
-    """Semantic Scholar search engine (free)."""
+    """Semantic Scholar search engine (requires API key)."""
 
     def __init__(
         self,
+        api_key: Optional[str] = None,
         timeout: int = 30,
     ) -> None:
-        """Initialize Semantic Scholar search engine."""
-        super().__init__(api_key=None, timeout=timeout)
+        """Initialize Semantic Scholar search engine.
+
+        Args:
+            api_key: API key for Semantic Scholar. If not provided, searches will return empty.
+            timeout: Request timeout in seconds
+        """
+        super().__init__(api_key=api_key, timeout=timeout)
         self.engine_name = "scholar"
         self.api_endpoint = "https://api.semanticscholar.org/graph/v1/paper/search"
 
@@ -209,6 +215,19 @@ class ScholarSearchEngine(BaseSearchEngine):
         Returns:
             SearchResponse with results
         """
+        if not self.api_key:
+            logger.warning(
+                f"{self.engine_name} API key not configured. "
+                "Set SEMANTIC_SCHOLAR_API_KEY environment variable."
+            )
+            return SearchResponse(
+                query=query,
+                results=[],
+                total_found=0,
+                engine=self.engine_name,
+                execution_time=0.0,
+            )
+
         try:
             params = {
                 "query": query,
@@ -216,9 +235,11 @@ class ScholarSearchEngine(BaseSearchEngine):
                 "fields": "paperId,title,url,authors,publicationDate,abstract",
             }
 
+            headers = {"x-api-key": self.api_key}
             response_data: dict[str, Any] = await self._fetch_with_retry(
                 self.api_endpoint,
                 params=params,
+                headers=headers,
             )
 
             results = self.parse_results(response_data)
@@ -267,6 +288,11 @@ class ScholarSearchEngine(BaseSearchEngine):
 class ArxivSearchEngine(BaseSearchEngine):
     """arXiv search engine (free)."""
 
+    NS = {
+        "atom": "http://www.w3.org/2005/Atom",
+        "arxiv": "http://arxiv.org/schemas/atom",
+    }
+
     def __init__(
         self,
         timeout: int = 30,
@@ -294,12 +320,13 @@ class ArxivSearchEngine(BaseSearchEngine):
                 "sortBy": "relevance",
             }
 
-            response_data: dict[str, Any] = await self._fetch_with_retry(
-                self.api_endpoint,
-                params=params,
-            )
+            # Get raw XML response
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+                response = await client.get(self.api_endpoint, params=params)
+                response.raise_for_status()
+                xml_text = response.text
 
-            results = self.parse_results(response_data)
+            results = self.parse_results(xml_text)
 
             return SearchResponse(
                 query=query,
@@ -319,15 +346,55 @@ class ArxivSearchEngine(BaseSearchEngine):
             )
 
     @staticmethod
-    def parse_results(raw_response: dict[str, Any]) -> list[SearchResult]:
-        """Parse arXiv API response.
+    def parse_results(xml_response: str) -> list[SearchResult]:
+        """Parse arXiv API XML response.
 
         Args:
-            raw_response: Raw response from arXiv API (XML parsed as dict)
+            xml_response: Raw XML response from arXiv API
 
         Returns:
             List of SearchResult objects
         """
-        # Note: arXiv returns XML, but for simplification we'll handle it later
-        # For now, return empty results
-        return []
+        import xml.etree.ElementTree as ET
+        from datetime import datetime
+
+        results = []
+        try:
+            root = ET.fromstring(xml_response)
+            entries = root.findall("atom:entry", ArxivSearchEngine.NS)
+
+            for entry in entries:
+                title = entry.find("atom:title", ArxivSearchEngine.NS)
+                summary = entry.find("atom:summary", ArxivSearchEngine.NS)
+                published = entry.find("atom:published", ArxivSearchEngine.NS)
+                link = entry.find("atom:link[@title='pdf']", ArxivSearchEngine.NS)
+                if link is None:
+                    link = entry.find("atom:link[@rel='alternate']", ArxivSearchEngine.NS)
+
+                authors = []
+                for author in entry.findall("atom:author/atom:name", ArxivSearchEngine.NS):
+                    if author.text:
+                        authors.append(author.text)
+
+                # Parse date from ISO format (YYYY-MM-DDTHH:MM:SSZ)
+                parsed_date = None
+                if published is not None and published.text:
+                    try:
+                        parsed_date = datetime.fromisoformat(published.text[:10]).date()
+                    except ValueError:
+                        pass
+
+                result = SearchResult(
+                    title=title.text.strip() if title is not None and title.text else "",
+                    url=link.get("href", "") if link is not None else "",
+                    source="arxiv",
+                    snippet=summary.text.strip()[:500] if summary is not None and summary.text else None,
+                    authors=authors,
+                    published_date=parsed_date,
+                    relevance_score=0.8,
+                )
+                results.append(result)
+        except ET.ParseError as e:
+            logger.error(f"Failed to parse arXiv XML response: {e}")
+
+        return results
