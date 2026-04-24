@@ -10,8 +10,6 @@ from openhands.sdk.tool import ToolExecutor
 from openhands.tools.search_academic.definition import SearchAction, SearchObservation
 from openhands.tools.search_academic.engines import (
     SerperSearchEngine,
-    ScholarSearchEngine,
-    ArxivSearchEngine,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,17 +33,15 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
         """
         # Get API key from parameter or environment
         self.serper_api_key = (
-            serper_api_key or os.getenv("SEARCH_ACADEMIC_SERPER_API_KEY")
+            serper_api_key or os.getenv("SERPER_API_KEY")
         )
         self.timeout = timeout
 
-        # Initialize search engines
+        # Initialize search engines (only serper for stability)
         self.engines = {
             "serper": SerperSearchEngine(
                 api_key=self.serper_api_key, timeout=timeout
             ),
-            "scholar": ScholarSearchEngine(timeout=timeout),
-            "arxiv": ArxivSearchEngine(timeout=timeout),
         }
 
     async def __call__(
@@ -63,8 +59,8 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
             Search observation with results
         """
         try:
-            # Determine which engines to use
-            engines_to_use = action.engines or ["scholar", "arxiv"]
+            # Determine which engines to use (default to serper only for stability)
+            engines_to_use = action.engines or ["serper"]
 
             # Run searches concurrently
             results_list = await asyncio.gather(
@@ -127,7 +123,7 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
                 search_results=[],
                 total_found=0,
                 query=action.query,
-                engines_used=action.engines or ["scholar", "arxiv"],
+                engines_used=action.engines or ["serper"],
                 is_error=True,
                 error=str(e),
             )
