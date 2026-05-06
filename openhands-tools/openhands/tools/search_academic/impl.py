@@ -9,6 +9,8 @@ from openhands.sdk.tool import ToolExecutor
 
 from openhands.tools.search_academic.definition import SearchAction, SearchObservation
 from openhands.tools.search_academic.engines import (
+    ArxivSearchEngine,
+    ScholarSearchEngine,
     SerperSearchEngine,
 )
 
@@ -21,6 +23,7 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
     def __init__(
         self,
         serper_api_key: Optional[str] = None,
+        scholar_api_key: Optional[str] = None,
         timeout: int = 30,
         **kwargs,
     ):
@@ -28,20 +31,22 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
 
         Args:
             serper_api_key: API key for Serper search engine
+            scholar_api_key: API key for Semantic Scholar search engine
             timeout: Request timeout in seconds
             **kwargs: Additional parameters (ignored)
         """
-        # Get API key from parameter or environment
-        self.serper_api_key = (
-            serper_api_key or os.getenv("SERPER_API_KEY")
-        )
+        self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
+        self.scholar_api_key = scholar_api_key or os.getenv("SEMANTIC_SCHOLAR_API_KEY")
         self.timeout = timeout
 
-        # Initialize search engines (only serper for stability)
         self.engines = {
             "serper": SerperSearchEngine(
                 api_key=self.serper_api_key, timeout=timeout
             ),
+            "scholar": ScholarSearchEngine(
+                api_key=self.scholar_api_key, timeout=timeout
+            ),
+            "arxiv": ArxivSearchEngine(timeout=timeout),
         }
 
     async def __call__(

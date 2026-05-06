@@ -1,8 +1,19 @@
 """Common test fixtures and utilities."""
 
+import os
 import uuid
 from pathlib import Path
 from unittest.mock import MagicMock
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Load .env from tests/ so API keys are available to integration tests
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(REPO_ROOT / "tests" / ".env")
+except ImportError:
+    pass
 
 import pytest
 from pydantic import SecretStr
@@ -14,8 +25,6 @@ from openhands.sdk.llm import LLM
 from openhands.sdk.tool import ToolExecutor
 from openhands.sdk.workspace import LocalWorkspace
 
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 TOKENIZER_FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "tokenizers"
 QWEN3_TOKENIZER_CONFIG = (
     TOKENIZER_FIXTURES_DIR / "qwen3-4b-instruct-2507-tokenizer_config.json"
