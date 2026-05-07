@@ -3,16 +3,17 @@
 import asyncio
 import logging
 import os
-from typing import Optional
+from typing import ClassVar
 
 from openhands.sdk.tool import ToolExecutor
-
 from openhands.tools.search_academic.definition import SearchAction, SearchObservation
-from openhands.tools.search_academic.engines import (
+from openhands.tools.search_academic.engines.base import (
     ArxivSearchEngine,
+    BaseSearchEngine,
     ScholarSearchEngine,
     SerperSearchEngine,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -20,54 +21,60 @@ logger = logging.getLogger(__name__)
 class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
     """Executor for academic search tool."""
 
+    _ENGINE_REGISTRY: ClassVar[dict[str, type[BaseSearchEngine]]] = {
+        "arxiv": ArxivSearchEngine,
+        "scholar": ScholarSearchEngine,
+        "serper": SerperSearchEngine,
+    }
+
     def __init__(
         self,
-        serper_api_key: Optional[str] = None,
-        scholar_api_key: Optional[str] = None,
+        engines: list[str] | None = None,
         timeout: int = 30,
-        **kwargs,
+        engine_params: dict[str, dict] | None = None,
     ):
         """Initialize search executor.
 
         Args:
-            serper_api_key: API key for Serper search engine
-            scholar_api_key: API key for Semantic Scholar search engine
+            engines: List of engine names to enable. Defaults to all registered engines.
             timeout: Request timeout in seconds
+            engine_params: Per-engine config overrides, e.g.
+                {"arxiv": {"timeout": 60}, "serper": {"api_key": "sk-..."}}
             **kwargs: Additional parameters (ignored)
         """
-        self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
-        self.scholar_api_key = scholar_api_key or os.getenv("SEMANTIC_SCHOLAR_API_KEY")
         self.timeout = timeout
 
-        self.engines = {
-            "serper": SerperSearchEngine(
-                api_key=self.serper_api_key, timeout=timeout
-            ),
-            "scholar": ScholarSearchEngine(
-                api_key=self.scholar_api_key, timeout=timeout
-            ),
-            "arxiv": ArxivSearchEngine(timeout=timeout),
-        }
+        engine_names = (
+            list(self._ENGINE_REGISTRY.keys()) if engines is None else engines
+        )
 
-    async def __call__(
+        env_defaults = {
+            "scholar": {"api_key": os.getenv("SEMANTIC_SCHOLAR_API_KEY")},
+            "serper": {"api_key": os.getenv("SERPER_API_KEY")},
+        }
+        custom_params = engine_params or {}
+
+        self.engines: dict[str, BaseSearchEngine] = {}
+        for name in engine_names:
+            engine_cls = self._ENGINE_REGISTRY.get(name)
+            if engine_cls is None:
+                logger.warning(f"Unknown engine: {name}, skipping")
+                continue
+            params = {
+                "timeout": timeout,
+                **env_defaults.get(name, {}),
+                **custom_params.get(name, {}),
+            }
+            self.engines[name] = engine_cls(**params)
+
+    async def __call__(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         action: SearchAction,
-        conversation=None,
+        _conversation: object = None,
     ) -> SearchObservation:
-        """Execute search action.
-
-        Args:
-            action: Search action with query and engines
-            conversation: Optional conversation context (unused)
-
-        Returns:
-            Search observation with results
-        """
         try:
-            # Determine which engines to use (default to serper only for stability)
-            engines_to_use = action.engines or ["serper"]
+            engines_to_use = action.engines or list(self.engines.keys())
 
-            # Run searches concurrently
             results_list = await asyncio.gather(
                 *[
                     self.engines[engine_name].search(
@@ -79,12 +86,11 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
                 return_exceptions=True,
             )
 
-            # Aggregate results and deduplicate by URL
-            seen_urls = set()
-            aggregated_results = []
+            seen_urls: set[str] = set()
+            aggregated_results: list[dict] = []
 
             for result in results_list:
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     logger.warning(f"Search engine failed: {result}")
                     continue
 
@@ -107,12 +113,10 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
                             }
                         )
 
-            # Sort by relevance score
             aggregated_results.sort(
                 key=lambda x: x.get("relevance_score", 0), reverse=True
             )
 
-            # Limit to max_results
             aggregated_results = aggregated_results[: action.max_results]
 
             return SearchObservation(
@@ -128,7 +132,5 @@ class SearchExecutor(ToolExecutor[SearchAction, SearchObservation]):
                 search_results=[],
                 total_found=0,
                 query=action.query,
-                engines_used=action.engines or ["serper"],
-                is_error=True,
-                error=str(e),
+                engines_used=action.engines or list(self.engines.keys()),
             )
