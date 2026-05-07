@@ -22,12 +22,7 @@ from openhands.tools.search_academic.engines import (
 )
 
 
-def _require_env(name: str) -> str:
-    """Get required env var or skip the test."""
-    value = os.environ.get(name)
-    if not value:
-        pytest.skip(f"{name} not set in .env file")
-    return value
+from tests.tools.search_academic.conftest import require_env
 
 
 class TestScholarSearchEngine:
@@ -36,7 +31,7 @@ class TestScholarSearchEngine:
     @pytest.mark.asyncio
     async def test_search_with_api_key(self):
         """Test that Scholar search returns non-empty results with API key."""
-        api_key = _require_env("SEMANTIC_SCHOLAR_API_KEY")
+        api_key = require_env("SEMANTIC_SCHOLAR_API_KEY")
 
         engine = ScholarSearchEngine(api_key=api_key, timeout=30)
         response = await engine.search("machine learning", max_results=5)
@@ -49,7 +44,7 @@ class TestScholarSearchEngine:
     @pytest.mark.asyncio
     async def test_search_result_structure(self):
         """Test that search results have required fields."""
-        api_key = _require_env("SEMANTIC_SCHOLAR_API_KEY")
+        api_key = require_env("SEMANTIC_SCHOLAR_API_KEY")
 
         engine = ScholarSearchEngine(api_key=api_key, timeout=30)
         response = await engine.search("transformer attention", max_results=3)
@@ -101,7 +96,7 @@ class TestSerperSearchEngine:
     @pytest.mark.asyncio
     async def test_search_with_api_key(self):
         """Test Serper search with valid API key."""
-        api_key = _require_env("SERPER_API_KEY")
+        api_key = require_env("SERPER_API_KEY")
 
         engine = SerperSearchEngine(api_key=api_key, timeout=30)
         response = await engine.search("machine learning", max_results=5)

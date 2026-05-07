@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-04-29T08:59:32.914430411Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2532,11 +2532,14 @@ version = "1.20.1"
 source = { editable = "openhands-tools" }
 dependencies = [
     { name = "bashlex" },
+    { name = "beautifulsoup4" },
     { name = "binaryornot" },
     { name = "browser-use" },
     { name = "cachetools" },
     { name = "func-timeout" },
+    { name = "httpx" },
     { name = "libtmux" },
+    { name = "lxml" },
     { name = "openhands-sdk" },
     { name = "pydantic" },
     { name = "tom-swe" },
@@ -2545,11 +2548,14 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "bashlex", specifier = ">=0.18" },
+    { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "browser-use", specifier = ">=0.8.0" },
     { name = "cachetools" },
     { name = "func-timeout", specifier = ">=4.3.5" },
+    { name = "httpx", specifier = ">=0.25.0" },
     { name = "libtmux", specifier = ">=0.53.0" },
+    { name = "lxml", specifier = ">=4.9.0" },
     { name = "openhands-sdk", editable = "openhands-sdk" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "tom-swe", specifier = ">=1.0.3" },
