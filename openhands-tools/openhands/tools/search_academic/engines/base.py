@@ -2,11 +2,12 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any, ClassVar
 
 import httpx
 
 from openhands.tools.search_academic.models import SearchResponse, SearchResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class BaseSearchEngine(ABC):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: int = 30,
     ) -> None:
         """Initialize search engine.
@@ -43,11 +44,11 @@ class BaseSearchEngine(ABC):
 
     @staticmethod
     @abstractmethod
-    def parse_results(raw_response: dict[str, Any]) -> list[SearchResult]:
+    def parse_results(raw_response: str | dict[str, Any]) -> list[SearchResult]:
         """Parse raw API response to SearchResult objects.
 
         Args:
-            raw_response: Raw response from API
+            raw_response: Raw response from API (XML string or JSON dict)
 
         Returns:
             List of SearchResult objects
@@ -57,8 +58,8 @@ class BaseSearchEngine(ABC):
     async def _fetch_with_retry(
         self,
         url: str,
-        headers: Optional[dict[str, str]] = None,
-        params: Optional[dict[str, Any]] = None,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
         max_retries: int = 3,
     ) -> dict[str, Any]:
         """Fetch data from URL with retry logic.
@@ -87,8 +88,9 @@ class BaseSearchEngine(ABC):
             except Exception as e:
                 last_exception = e
                 logger.warning(
-                    f"Fetch attempt {attempt + 1} failed: {e}. "
-                    f"Retrying..." if attempt < max_retries - 1 else "Giving up."
+                    f"Fetch attempt {attempt + 1} failed: {e}. Retrying..."
+                    if attempt < max_retries - 1
+                    else "Giving up."
                 )
 
         if last_exception:
@@ -101,7 +103,7 @@ class SerperSearchEngine(BaseSearchEngine):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: int = 30,
     ) -> None:
         """Initialize Serper search engine.
@@ -165,7 +167,7 @@ class SerperSearchEngine(BaseSearchEngine):
             )
 
     @staticmethod
-    def parse_results(raw_response: dict[str, Any]) -> list[SearchResult]:
+    def parse_results(raw_response: str | dict[str, Any]) -> list[SearchResult]:
         """Parse Serper API response.
 
         Args:
@@ -174,6 +176,8 @@ class SerperSearchEngine(BaseSearchEngine):
         Returns:
             List of SearchResult objects
         """
+        if not isinstance(raw_response, dict):
+            return []
         results = []
         for item in raw_response.get("organic", []):
             result = SearchResult(
@@ -192,13 +196,14 @@ class ScholarSearchEngine(BaseSearchEngine):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: int = 30,
     ) -> None:
         """Initialize Semantic Scholar search engine.
 
         Args:
-            api_key: API key for Semantic Scholar. If not provided, searches will return empty.
+            api_key: API key for Semantic Scholar.
+                If not provided, searches will return empty.
             timeout: Request timeout in seconds
         """
         super().__init__(api_key=api_key, timeout=timeout)
@@ -262,7 +267,7 @@ class ScholarSearchEngine(BaseSearchEngine):
             )
 
     @staticmethod
-    def parse_results(raw_response: dict[str, Any]) -> list[SearchResult]:
+    def parse_results(raw_response: str | dict[str, Any]) -> list[SearchResult]:
         """Parse Semantic Scholar API response.
 
         Args:
@@ -271,6 +276,8 @@ class ScholarSearchEngine(BaseSearchEngine):
         Returns:
             List of SearchResult objects
         """
+        if not isinstance(raw_response, dict):
+            return []
         results = []
         for item in raw_response.get("data", []):
             authors = [a.get("name", "") for a in item.get("authors", [])]
@@ -288,7 +295,7 @@ class ScholarSearchEngine(BaseSearchEngine):
 class ArxivSearchEngine(BaseSearchEngine):
     """arXiv search engine (free)."""
 
-    NS = {
+    NS: ClassVar[dict[str, str]] = {
         "atom": "http://www.w3.org/2005/Atom",
         "arxiv": "http://arxiv.org/schemas/atom",
     }
@@ -321,7 +328,9 @@ class ArxivSearchEngine(BaseSearchEngine):
             }
 
             # Get raw XML response
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=self.timeout, follow_redirects=True
+            ) as client:
                 response = await client.get(self.api_endpoint, params=params)
                 response.raise_for_status()
                 xml_text = response.text
@@ -346,21 +355,23 @@ class ArxivSearchEngine(BaseSearchEngine):
             )
 
     @staticmethod
-    def parse_results(xml_response: str) -> list[SearchResult]:
+    def parse_results(raw_response: str | dict[str, Any]) -> list[SearchResult]:
         """Parse arXiv API XML response.
 
         Args:
-            xml_response: Raw XML response from arXiv API
+            raw_response: Raw XML response from arXiv API
 
         Returns:
             List of SearchResult objects
         """
+        if not isinstance(raw_response, str):
+            return []
         import xml.etree.ElementTree as ET
         from datetime import datetime
 
         results = []
         try:
-            root = ET.fromstring(xml_response)
+            root = ET.fromstring(raw_response)
             entries = root.findall("atom:entry", ArxivSearchEngine.NS)
 
             for entry in entries:
@@ -369,10 +380,14 @@ class ArxivSearchEngine(BaseSearchEngine):
                 published = entry.find("atom:published", ArxivSearchEngine.NS)
                 link = entry.find("atom:link[@title='pdf']", ArxivSearchEngine.NS)
                 if link is None:
-                    link = entry.find("atom:link[@rel='alternate']", ArxivSearchEngine.NS)
+                    link = entry.find(
+                        "atom:link[@rel='alternate']", ArxivSearchEngine.NS
+                    )
 
                 authors = []
-                for author in entry.findall("atom:author/atom:name", ArxivSearchEngine.NS):
+                for author in entry.findall(
+                    "atom:author/atom:name", ArxivSearchEngine.NS
+                ):
                     if author.text:
                         authors.append(author.text)
 
@@ -385,10 +400,14 @@ class ArxivSearchEngine(BaseSearchEngine):
                         pass
 
                 result = SearchResult(
-                    title=title.text.strip() if title is not None and title.text else "",
+                    title=title.text.strip()
+                    if title is not None and title.text
+                    else "",
                     url=link.get("href", "") if link is not None else "",
                     source="arxiv",
-                    snippet=summary.text.strip()[:500] if summary is not None and summary.text else None,
+                    snippet=summary.text.strip()[:500]
+                    if summary is not None and summary.text
+                    else None,
                     authors=authors,
                     published_date=parsed_date,
                     relevance_score=0.8,
