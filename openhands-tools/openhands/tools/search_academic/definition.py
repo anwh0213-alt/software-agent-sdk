@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import Field
 
+
 if TYPE_CHECKING:
     from openhands.sdk.conversation.state import ConversationState
 
@@ -14,11 +15,8 @@ from openhands.sdk.tool import (
     Observation,
     ToolAnnotations,
     ToolDefinition,
-    ToolExecutor,
     register_tool,
 )
-
-from openhands.tools.search_academic.models import SearchResponse
 
 
 TOOL_DESCRIPTION = """Search academic papers from multiple sources.
@@ -28,7 +26,8 @@ This tool searches for academic papers using various search engines including:
 - arXiv (free, preprints in computer science and related fields)
 - Serper (requires API key for Google Search)
 
-Returns structured search results with title, URL, authors, publication date, and relevance score.
+Returns structured search results with title, URL, authors, publication date,
+and relevance score.
 """
 
 
@@ -43,11 +42,18 @@ class SearchAction(Action):
 
     query: str = Field(
         ...,
-        description="The search query string. For example: 'machine learning', 'deep learning transformers'",
+        description=(
+            "The search query string."
+            " For example: 'machine learning', 'deep learning transformers'"
+        ),
     )
     engines: list[str] = Field(
         default_factory=lambda: ["scholar", "arxiv"],
-        description="List of search engines to use. Available: 'scholar' (Semantic Scholar), 'arxiv' (arXiv), 'serper' (requires API key)",
+        description=(
+            "List of search engines to use."
+            " Available: 'scholar' (Semantic Scholar),"
+            " 'arxiv' (arXiv), 'serper' (requires API key)"
+        ),
     )
     max_results: int = Field(
         default=10,
@@ -96,7 +102,9 @@ class SearchObservation(Observation):
             result_text += f"   URL: {result.get('url', 'N/A')}\n"
             result_text += f"   Source: {result.get('source', 'N/A')}\n"
             if result.get("authors"):
-                result_text += f"   Authors: {', '.join(result['authors'])}\n"
+                authors = result["authors"]
+                if isinstance(authors, list):
+                    result_text += f"   Authors: {', '.join(authors)}\n"
             result_text += f"   Relevance: {result.get('relevance_score', 0.5)}\n\n"
 
         return [TextContent(text=result_text)]
@@ -110,7 +118,7 @@ class SearchAcademicTool(ToolDefinition[SearchAction, SearchObservation]):
     @classmethod
     def create(
         cls,
-        conv_state: "ConversationState",
+        _conv_state: "ConversationState",
         **params: dict,
     ) -> Sequence["SearchAcademicTool"]:
         """Create tool instance.
@@ -124,7 +132,7 @@ class SearchAcademicTool(ToolDefinition[SearchAction, SearchObservation]):
         """
         from openhands.tools.search_academic.impl import SearchExecutor
 
-        executor = SearchExecutor(**params)
+        executor = SearchExecutor(**params)  # pyright: ignore[reportArgumentType]
 
         return [
             cls(
